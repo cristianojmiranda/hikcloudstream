@@ -4,7 +4,7 @@ version = "0.1.1"
 description = "Unofficial Python SDK for Hik-Connect cloud cameras: list devices, snapshots, and live VTM streaming"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Cristiano Miranda" }]
 keywords = [
     "hikvision",
@@ -23,9 +23,9 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Multimedia :: Video :: Capture",
     "Topic :: System :: Networking",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 dependencies = [
@@ -65,13 +65,13 @@ packages = ["src/hikcloudstream"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

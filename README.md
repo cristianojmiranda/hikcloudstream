@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/cristianojmiranda/hikcloudstream/actions/workflows/ci.yml/badge.svg)](https://github.com/cristianojmiranda/hikcloudstream/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/hikcloudstream.svg)](https://pypi.org/project/hikcloudstream/)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
 **Unofficial** Python SDK for **Hik-Connect cloud cameras** — list devices, cloud snapshots, and live streaming over the VTM relay.
