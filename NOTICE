@@ -1,0 +1,12 @@
+hikcloudstream
+Copyright 2026 Cristiano Miranda
+
+Licensed under the Apache License, Version 2.0.
+
+This project depends on:
+
+- pyezvizapi (Apache-2.0) — https://github.com/RenierM26/pyEzvizApi
+- httpx (BSD-3-Clause) — https://github.com/encode/httpx
+- pycryptodome (BSD) — https://github.com/Legrandin/pycryptodome
+- pillow (MIT-CMU) — optional extra [cli]/[viewer]
+- av / PyAV (BSD-3-Clause) — optional extra [viewer]

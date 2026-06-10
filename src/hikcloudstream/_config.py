@@ -1,0 +1,15 @@
+"""Internal constants shared across modules."""
+
+from __future__ import annotations
+
+JPEG_MAGIC = b"\xff\xd8"
+HIK_ENCODED_PREFIX = b"hikencodepicture"
+CLOUD_CAPTURE_MAX = (352, 288)
+DEVICE_FILTER = (
+    "TIME_PLAN,CONNECTION,SWITCH,STATUS,STATUS_EXT,WIFI,NODISTURB,P2P,KMS,HIDDNS"
+)
+RESOURCE_VTM_FILTER = "VTM"
+ANNEX_B_START_CODE = b"\x00\x00\x00\x01"
+MJPEG_BOUNDARY = b"hikframe"
+DEFAULT_STREAM_TYPE = 2
+STREAM_PROBE_TIMEOUT = 5.0
