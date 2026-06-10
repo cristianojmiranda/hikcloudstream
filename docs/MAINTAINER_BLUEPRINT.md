@@ -41,9 +41,8 @@ Publishing as unofficial OSS is **reasonable** (same category as pyezvizapi, Hom
 
 See README legal disclaimer. Confirm employer IP if applicable.
 
-## Deferred (post-0.1.0)
+## Deferred (post-0.1.1)
 
-- PyPI publish
 - Async API (`httpx.AsyncClient`)
 - P2P / LAN RTSP
 - Encrypted live MJPEG viewer

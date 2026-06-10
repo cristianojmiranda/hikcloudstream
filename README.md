@@ -1,6 +1,7 @@
 # hikcloudstream
 
 [![CI](https://github.com/cristianojmiranda/hikcloudstream/actions/workflows/ci.yml/badge.svg)](https://github.com/cristianojmiranda/hikcloudstream/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/hikcloudstream.svg)](https://pypi.org/project/hikcloudstream/)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -25,9 +26,10 @@
 ## Quick start
 
 ```bash
+pip install "hikcloudstream[viewer]"
+# or from source:
 git clone https://github.com/cristianojmiranda/hikcloudstream.git
-cd hikcloudstream
-uv sync --extra viewer
+cd hikcloudstream && uv sync --extra viewer
 ```
 
 ```python
@@ -43,9 +45,9 @@ with HikConnectClient() as client:
 
 | Extra | Purpose | Command |
 |-------|---------|---------|
-| core | API + streaming protocol | `pip install hikcloudstream` or `uv sync` |
-| `cli` | Command-line tools + Pillow | `uv sync --extra cli` |
-| `viewer` | MJPEG HTTP viewer (PyAV) | `uv sync --extra viewer` |
+| core | API + streaming protocol | `pip install hikcloudstream` |
+| `cli` | Command-line tools + Pillow | `pip install "hikcloudstream[cli]"` |
+| `viewer` | MJPEG HTTP viewer (PyAV) | `pip install "hikcloudstream[viewer]"` |
 | `dev` | Tests, ruff, mypy | `uv sync --extra dev` |
 
 **System dependency:** [FFmpeg](https://ffmpeg.org/) (`ffmpeg` on PATH) for recording, HD frame capture, and MPEG-TS remux.

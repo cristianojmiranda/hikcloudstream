@@ -28,6 +28,10 @@ uv run pytest -m integration  # when added
 
 Never commit credentials or device serials from your environment.
 
+## Releases
+
+See [docs/publishing.md](docs/publishing.md) for PyPI publish steps.
+
 ## Pull request checklist
 
 - [ ] English for code, comments, CLI help, and user-facing errors
