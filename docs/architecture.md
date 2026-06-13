@@ -32,7 +32,7 @@ src/hikcloudstream/
 │   ├── probe.py       # Auto stream type
 │   ├── rtp.py         # Depacketization
 │   ├── crypto.py      # Encrypted NAL
-│   └── sinks/         # MPEG-TS, MJPEG, HTTP
+│   └── sinks/         # MPEG-TS, HLS fMP4, MJPEG, HTTP
 └── cli/               # Optional commands
 ```
 
@@ -42,4 +42,4 @@ src/hikcloudstream/
 - **pyezvizapi** — VTM TCP protocol
 - **pycryptodome** — AES for snapshots and encrypted streams
 - **av** (optional) — PyAV MJPEG decoder
-- **FFmpeg** (system) — remux and frame extract
+- **FFmpeg** (system) — MPEG-TS remux, HLS fMP4 segments, frame extract

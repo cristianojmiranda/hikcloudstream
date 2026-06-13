@@ -36,6 +36,49 @@ with HikConnectClient() as client:
 | `serve_stream_proxy(client, camera)` | HTTP MJPEG + MPEG-TS |
 | `MjpegServer(client, camera).serve_forever()` | Same as proxy |
 
+## Sinks (library integration)
+
+Lower-level sinks under `hikcloudstream.stream.sinks` for custom ingest/fan-out:
+
+| Module | Function | Output |
+|--------|----------|--------|
+| `annex_b` | `iter_annex_b_chunks(session)` | Raw H.264 Annex B chunks |
+| `mpegts` | `stream_annex_b_to_mpegts(...)` | MPEG-TS on stdout or file |
+| `mjpeg` | `stream_mjpeg(...)` | Multipart MJPEG (PyAV decode + JPEG encode) |
+| `hls` | `stream_annex_b_to_hls(...)` | Rolling HLS fMP4 segments on disk |
+
+### HLS fMP4 (passthrough)
+
+For many browser viewers from a **single** VTM ingest, remux H.264 without re-encoding:
+
+```python
+import threading
+from pathlib import Path
+
+from hikcloudstream.stream.sinks.hls import stream_annex_b_to_hls
+
+stop = threading.Event()
+
+def on_segment(count: int) -> None:
+    print("segments ready:", count)
+
+stream_annex_b_to_hls(
+    vtm_client,
+    Path("/tmp/hls/ch1"),
+    segment_seconds=2.0,
+    list_size=6,
+    stop_event=stop,
+    on_segment=on_segment,
+)
+# Serve Path("/tmp/hls/ch1/index.m3u8") + seg_*.m4s + init.mp4 via HTTP
+```
+
+Requires **FFmpeg** on PATH. Uses `-c copy` (no transcode). Segment files roll under `delete_segments+append_list+independent_segments+omit_endlist`.
+
+### MJPEG tuning
+
+`stream_mjpeg` accepts optional `jpeg_quality` (50–95, default 82), `max_width` (default 1920 main / 1408 sub), and `require_keyframe` (wait for an IDR before emitting frames). At quality ≥ 90, JPEG uses 4:4:4 chroma subsampling for sharper color.
+
 ## Stream type selection
 
 `StreamType.AUTO` (default) probes substream (`stream=2`) for 5 seconds; if no valid RTP, uses main (`stream=1`).

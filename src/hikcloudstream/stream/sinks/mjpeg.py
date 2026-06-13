@@ -49,7 +49,13 @@ def av_frame_to_jpeg(
         height = max(2, int(frame.height * max_width / frame.width) // 2 * 2)
         frame = frame.reformat(width=max_width, height=height)
     buffer = io.BytesIO()
-    frame.to_image().save(buffer, format="JPEG", quality=quality, optimize=True)
+    save_kw: dict = {"format": "JPEG", "quality": quality}
+    if quality >= 90:
+        save_kw["optimize"] = False
+        save_kw["subsampling"] = 0
+    else:
+        save_kw["optimize"] = True
+    frame.to_image().save(buffer, **save_kw)
     return buffer.getvalue()
 
 
@@ -69,6 +75,9 @@ def stream_mjpeg(
     frame_fps: float = 4.0,
     validate_code: str | None = None,
     stream_type: int = 2,
+    jpeg_quality: int = 82,
+    max_width: int | None = None,
+    require_keyframe: bool = True,
 ) -> None:
     """Stream MJPEG via PyAV — continuous H.264 decoder."""
     import av
@@ -84,7 +93,11 @@ def stream_mjpeg(
     next_emit = 0.0
     started_at = time.monotonic()
     sent_placeholder = False
-    max_width = 1920 if stream_type == 1 else 1280
+    if max_width is None:
+        max_width = 1920 if stream_type == 1 else 1408
+    quality = max(50, min(jpeg_quality, 95))
+    got_keyframe = not require_keyframe
+    keyframe_deadline = started_at + 3.0 if require_keyframe else 0.0
 
     try:
         chunk_iter = iter_annex_b_chunks(stream)
@@ -108,12 +121,21 @@ def stream_mjpeg(
                     continue
 
                 for frame in decoded_frames:
+                    if not got_keyframe:
+                        if getattr(frame, "key_frame", False):
+                            got_keyframe = True
+                        elif time.monotonic() < keyframe_deadline:
+                            continue
+                        else:
+                            got_keyframe = True
                     now = time.monotonic()
                     if now < next_emit:
                         continue
                     next_emit = now + frame_period
                     try:
-                        jpeg = av_frame_to_jpeg(frame, max_width=max_width)
+                        jpeg = av_frame_to_jpeg(
+                            frame, max_width=max_width, quality=quality
+                        )
                     except Exception:
                         continue
                     write_mjpeg_frame(output, jpeg)

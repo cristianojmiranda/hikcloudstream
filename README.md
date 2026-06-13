@@ -14,7 +14,7 @@
 - Log in with your Hik-Connect account (same credentials as the mobile app)
 - List cameras and channels on the account
 - Cloud snapshot (~352×288 thumbnail via API)
-- **Live stream** via cloud VTM relay (H.264 → Annex B, MPEG-TS, MJPEG viewer)
+- **Live stream** via cloud VTM relay (H.264 → Annex B, MPEG-TS, HLS fMP4, MJPEG viewer)
 - Auto-select substream vs main stream per camera
 
 ## What it does **not** do
@@ -50,7 +50,7 @@ with HikConnectClient() as client:
 | `viewer` | MJPEG HTTP viewer (PyAV) | `pip install "hikcloudstream[viewer]"` |
 | `dev` | Tests, ruff, mypy | `uv sync --extra dev` |
 
-**System dependency:** [FFmpeg](https://ffmpeg.org/) (`ffmpeg` on PATH) for recording, HD frame capture, and MPEG-TS remux.
+**System dependency:** [FFmpeg](https://ffmpeg.org/) (`ffmpeg` on PATH) for recording, HD frame capture, MPEG-TS remux, and HLS fMP4 segment generation.
 
 ## CLI
 

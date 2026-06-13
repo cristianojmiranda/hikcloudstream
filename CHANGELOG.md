@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **HLS fMP4 sink** (`stream/sinks/hls.py`) — remux live Annex B H.264 to rolling fMP4 segments via FFmpeg (`-c copy`), with segment progress callbacks for multi-viewer fan-out (e.g. GATO gate viewer POC)
+- Unit tests for HLS output-dir cleanup and FFmpeg remux argument wiring
+
 ### Changed
 
 - Minimum Python version is now **3.12** (drop 3.11; CI tests 3.12–3.14)
+- **MJPEG sink** — configurable `jpeg_quality`, `max_width`, and `require_keyframe`; higher default substream width (1408); 4:4:4 subsampling at quality ≥ 90 to reduce color banding
 
 ## [0.1.1] - 2026-06-09
 
