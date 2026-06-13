@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-13
+
 ### Added
 
 - **HLS fMP4 sink** (`stream/sinks/hls.py`) — remux live Annex B H.264 to rolling fMP4 segments via FFmpeg (`-c copy`), with segment progress callbacks for multi-viewer fan-out (e.g. GATO gate viewer POC)
