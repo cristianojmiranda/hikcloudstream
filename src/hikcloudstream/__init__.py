@@ -16,7 +16,7 @@ from hikcloudstream.exceptions import (
 )
 from hikcloudstream.models import Camera, ClientConfig, Credentials, StreamType
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     "CLOUD_CAPTURE_MAX",

@@ -74,8 +74,28 @@ def open_hls_remux_process(
         raise FFmpegNotFoundError(f"could not launch FFmpeg at {ffmpeg_path!r}: {exc}") from exc
 
 
-def _count_segments(output_dir: Path) -> int:
-    return len(list(output_dir.glob("seg_*.m4s")))
+class _SegmentWatcher:
+    """O(1) segment detection — checks expected seq files, no directory glob."""
+
+    _SCAN_AHEAD = 12
+
+    def __init__(self, output_dir: Path) -> None:
+        self._output_dir = output_dir
+        self._highest_seq = 0
+        self._segments_emitted = 0
+
+    def poll(self) -> list[int]:
+        """Return cumulative counts for each newly observed segment (may be >1 per poll)."""
+        new_counts: list[int] = []
+        limit = self._highest_seq + self._SCAN_AHEAD
+        seq = self._highest_seq + 1
+        while seq <= limit:
+            if (self._output_dir / f"seg_{seq:05d}.m4s").is_file():
+                self._highest_seq = seq
+                self._segments_emitted += 1
+                new_counts.append(self._segments_emitted)
+            seq += 1
+        return new_counts
 
 
 def stream_annex_b_to_hls(
@@ -114,20 +134,18 @@ def stream_annex_b_to_hls(
         raise FFmpegNotFoundError("could not open FFmpeg stdin pipe")
 
     writer_error: list[Exception] = []
-    last_segment_count = 0
+    segment_watcher = _SegmentWatcher(output_dir)
     last_progress_at = 0.0
 
     def _maybe_notify_progress(force: bool = False) -> None:
-        nonlocal last_segment_count, last_progress_at
+        nonlocal last_progress_at
         if on_segment is None:
             return
         now = time.monotonic()
         if not force and now - last_progress_at < progress_interval_seconds:
             return
         last_progress_at = now
-        count = _count_segments(output_dir)
-        if count > last_segment_count:
-            last_segment_count = count
+        for count in segment_watcher.poll():
             on_segment(count)
 
     def _feed_ffmpeg() -> None:

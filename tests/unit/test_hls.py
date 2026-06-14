@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from hikcloudstream.stream.sinks.hls import (
+    _SegmentWatcher,
     open_hls_remux_process,
     prepare_hls_output_dir,
 )
@@ -42,3 +43,31 @@ def test_open_hls_remux_process_args(tmp_path: Path) -> None:
             process.stdin.close()
         process.kill()
         process.wait()
+
+
+def test_segment_watcher_detects_sequential_segments(tmp_path: Path) -> None:
+    output = tmp_path / "ch1"
+    output.mkdir()
+    watcher = _SegmentWatcher(output)
+    assert watcher.poll() == []
+
+    (output / "seg_00001.m4s").write_bytes(b"a")
+    assert watcher.poll() == [1]
+
+    assert watcher.poll() == []
+    (output / "seg_00002.m4s").write_bytes(b"b")
+    (output / "seg_00003.m4s").write_bytes(b"c")
+    assert watcher.poll() == [2, 3]
+
+
+def test_segment_watcher_skips_deleted_middle_segment(tmp_path: Path) -> None:
+    """Rolling window may delete seg_00002 before poll — watcher must still see seg_00003."""
+    output = tmp_path / "ch1"
+    output.mkdir()
+    watcher = _SegmentWatcher(output)
+
+    (output / "seg_00001.m4s").write_bytes(b"a")
+    watcher.poll()
+
+    (output / "seg_00003.m4s").write_bytes(b"c")
+    assert watcher.poll() == [2]

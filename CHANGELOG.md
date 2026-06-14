@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-14
+
+### Changed
+
+- **HLS segment progress** — replace directory glob with O(1) sequential file polling (`_SegmentWatcher`); handles rolling-window segment deletion correctly
+
 ## [0.1.2] - 2026-06-13
 
 ### Added
