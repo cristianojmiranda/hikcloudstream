@@ -30,48 +30,58 @@ def open_hls_remux_process(
     segment_seconds: float = 2.0,
     list_size: int = 6,
     input_format: str = "h264",
+    use_wallclock_timestamps: bool = True,
 ) -> subprocess.Popen[bytes]:
     playlist = output_dir / "index.m3u8"
     segment_pattern = str(output_dir / "seg_%05d.m4s")
+    input_args: list[str] = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-fflags",
+        "+genpts+igndts+nobuffer",
+    ]
+    if use_wallclock_timestamps:
+        input_args.extend(["-use_wallclock_as_timestamps", "1"])
+    input_args.extend(
+        [
+            "-probesize",
+            "500000",
+            "-analyzeduration",
+            "1000000",
+            "-flags",
+            "low_delay",
+            "-f",
+            input_format,
+            "-i",
+            "pipe:0",
+            "-c",
+            "copy",
+            "-muxdelay",
+            "0",
+            "-muxpreload",
+            "0",
+            "-f",
+            "hls",
+            "-hls_time",
+            str(max(segment_seconds, 1.0)),
+            "-hls_list_size",
+            str(max(list_size, 3)),
+            "-hls_flags",
+            "delete_segments+append_list+independent_segments+omit_endlist",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            segment_pattern,
+            str(playlist),
+        ]
+    )
     try:
         return subprocess.Popen(
-            [
-                ffmpeg_path,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-fflags",
-                "+genpts+igndts+nobuffer",
-                "-use_wallclock_as_timestamps",
-                "1",
-                "-probesize",
-                "500000",
-                "-analyzeduration",
-                "1000000",
-                "-flags",
-                "low_delay",
-                "-f",
-                input_format,
-                "-i",
-                "pipe:0",
-                "-c",
-                "copy",
-                "-f",
-                "hls",
-                "-hls_time",
-                str(max(segment_seconds, 1.0)),
-                "-hls_list_size",
-                str(max(list_size, 3)),
-                "-hls_flags",
-                "delete_segments+append_list+independent_segments+omit_endlist",
-                "-hls_segment_type",
-                "fmp4",
-                "-hls_fmp4_init_filename",
-                "init.mp4",
-                "-hls_segment_filename",
-                segment_pattern,
-                str(playlist),
-            ],
+            input_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -160,6 +170,7 @@ def stream_annex_b_to_hls(
     stop_event: threading.Event | None = None,
     on_segment: Callable[[int], None] | None = None,
     progress_interval_seconds: float = 0.25,
+    use_wallclock_timestamps: bool = True,
 ) -> None:
     """
     Feed live Annex B H.264 into ffmpeg and write rolling HLS fMP4 segments.
@@ -180,6 +191,7 @@ def stream_annex_b_to_hls(
         segment_seconds=segment_seconds,
         list_size=list_size,
         input_format=ffmpeg_input_format(transport),
+        use_wallclock_timestamps=use_wallclock_timestamps,
     )
     stdin = process.stdin
     if stdin is None:

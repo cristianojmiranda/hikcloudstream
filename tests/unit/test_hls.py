@@ -52,6 +52,28 @@ def test_open_hls_remux_process_args(tmp_path: Path) -> None:
         process.wait()
 
 
+def test_open_hls_remux_process_substream_timestamps(tmp_path: Path) -> None:
+    pytest.importorskip("shutil")
+    ffmpeg = __import__("shutil").which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not installed")
+
+    output = tmp_path / "ch1"
+    prepare_hls_output_dir(output)
+    process = open_hls_remux_process(
+        output,
+        ffmpeg,
+        use_wallclock_timestamps=False,
+    )
+    try:
+        assert "-use_wallclock_as_timestamps" not in process.args
+    finally:
+        if process.stdin:
+            process.stdin.close()
+        process.kill()
+        process.wait()
+
+
 def test_segment_watcher_detects_sequential_segments(tmp_path: Path) -> None:
     output = tmp_path / "ch1"
     output.mkdir()
