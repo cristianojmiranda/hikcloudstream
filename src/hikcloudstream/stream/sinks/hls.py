@@ -41,7 +41,13 @@ def open_hls_remux_process(
                 "-loglevel",
                 "error",
                 "-fflags",
-                "nobuffer",
+                "+genpts+igndts+nobuffer",
+                "-use_wallclock_as_timestamps",
+                "1",
+                "-probesize",
+                "500000",
+                "-analyzeduration",
+                "1000000",
                 "-flags",
                 "low_delay",
                 "-f",
@@ -68,10 +74,20 @@ def open_hls_remux_process(
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
     except OSError as exc:
         raise FFmpegNotFoundError(f"could not launch FFmpeg at {ffmpeg_path!r}: {exc}") from exc
+
+
+def _read_ffmpeg_stderr(process: subprocess.Popen[bytes]) -> str:
+    stderr = process.stderr
+    if stderr is None:
+        return ""
+    try:
+        return stderr.read().decode("utf-8", errors="replace").strip()
+    except OSError:
+        return ""
 
 
 class _SegmentWatcher:
@@ -96,6 +112,42 @@ class _SegmentWatcher:
                 new_counts.append(self._segments_emitted)
             seq += 1
         return new_counts
+
+
+def hls_output_ready(output_dir: Path) -> bool:
+    if not (output_dir / "index.m3u8").is_file():
+        return False
+    if (output_dir / "init.mp4").is_file():
+        return True
+    return any(output_dir.glob("seg_*.m4s"))
+
+
+def wait_for_hls_ready(
+    output_dir: Path,
+    *,
+    timeout: float = 20.0,
+    ingest_thread: threading.Thread | None = None,
+    errors: list[str] | None = None,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if hls_output_ready(output_dir):
+            return True
+        if ingest_thread is not None and not ingest_thread.is_alive() and errors:
+            return False
+        time.sleep(0.25)
+    return False
+
+
+def hls_content_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".m3u8":
+        return "application/vnd.apple.mpegurl"
+    if suffix == ".m4s":
+        return "video/iso.segment"
+    if suffix == ".mp4":
+        return "video/mp4"
+    return "application/octet-stream"
 
 
 def stream_annex_b_to_hls(
@@ -156,6 +208,13 @@ def stream_annex_b_to_hls(
                     break
                 stdin.write(chunk)
                 _maybe_notify_progress()
+        except BrokenPipeError:
+            detail = _read_ffmpeg_stderr(process)
+            writer_error.append(
+                FFmpegNotFoundError(
+                    detail or "FFmpeg closed stdin (stream format not supported)"
+                )
+            )
         except Exception as exc:
             writer_error.append(exc)
         finally:
@@ -182,7 +241,10 @@ def stream_annex_b_to_hls(
 
     _maybe_notify_progress(force=True)
 
-    if writer_error:
+    if writer_error and not (stop_event and stop_event.is_set()):
         raise writer_error[0]
     if process.returncode not in (0, None) and not (stop_event and stop_event.is_set()):
-        raise FFmpegNotFoundError(f"FFmpeg HLS remux failed with exit code {process.returncode}")
+        detail = _read_ffmpeg_stderr(process)
+        raise FFmpegNotFoundError(
+            detail or f"FFmpeg HLS remux failed with exit code {process.returncode}"
+        )

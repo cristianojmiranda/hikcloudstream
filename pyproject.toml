@@ -1,6 +1,6 @@
 [project]
 name = "hikcloudstream"
-version = "0.1.3"
+version = "0.1.4"
 description = "Unofficial Python SDK for Hik-Connect cloud cameras: list devices, snapshots, and live VTM streaming"
 readme = "README.md"
 license = "Apache-2.0"

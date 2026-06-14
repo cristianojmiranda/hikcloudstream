@@ -61,10 +61,22 @@ export HIK_CONNECT_PASSWORD="your_password"
 uv run hikcloudstream-snapshot "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" --list
 uv run hikcloudstream-snapshot "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 1 -o thumb.jpg
 uv run hikcloudstream-stream "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 1 --proxy
+uv run hikcloudstream-stream "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 17 --proxy --player hls
 uv run hikcloudstream-stream "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 1 -o frame.jpg --duration 6s
 ```
 
-Open `http://127.0.0.1:8558/` in a browser when using `--proxy`.
+Open `http://127.0.0.1:8558/` when using `--proxy` (default **HLS** player; use `--player mjpeg` for legacy MJPEG).
+
+### Browser proxy options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--player hls` | yes | H.264 passthrough via hls.js (sharper) |
+| `--player mjpeg` | | PyAV MJPEG `<img>` viewer |
+| `--main-stream` | | Force stream=1; falls back to substream only when substream exists |
+| `--preview-fps` | 8 | MJPEG frame rate |
+| `--jpeg-quality` | 75 | MJPEG JPEG quality |
+| `--max-width` | auto | MJPEG max width (0=native substream) |
 
 ## Stream types
 

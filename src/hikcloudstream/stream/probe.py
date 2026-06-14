@@ -60,3 +60,38 @@ def resolve_stream_type(
     if substream_has_media(substream_info["stream_url"], timeout=probe_timeout):
         return 2
     return 1
+
+
+def hls_stream_candidates(
+    client: HikConnectClient,
+    camera: Camera,
+    selected_stream: int,
+    forced_stream_type: int | None,
+    *,
+    client_type: int = 55,
+    probe_timeout: float = 3.0,
+) -> list[int]:
+    """
+    Build ordered HLS ingest candidates.
+
+    When ``--main-stream`` is forced and the camera also has a substream, try
+    main first then fall back to substream on decode failure. Cameras with only
+    main (e.g. channel 17) never get a substream candidate.
+    """
+    candidates = [selected_stream]
+    if forced_stream_type != 1 or selected_stream != 1:
+        return candidates
+
+    from hikcloudstream.stream.session import build_cloud_stream_info
+
+    adapter = HikConnectStreamAdapter(client)
+    substream_info = build_cloud_stream_info(
+        adapter,
+        camera,
+        client_type=client_type,
+        refresh_vtm=False,
+        stream_type=2,
+    )
+    if substream_has_media(substream_info["stream_url"], timeout=probe_timeout):
+        candidates.append(2)
+    return candidates

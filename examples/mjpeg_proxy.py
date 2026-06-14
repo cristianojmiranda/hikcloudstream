@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start a local MJPEG HTTP viewer for the first camera.
+"""Start a local HLS or MJPEG HTTP viewer for the first camera.
 
 Requires: uv sync --extra viewer + FFmpeg on PATH
 Env: HIK_CONNECT_USER, HIK_CONNECT_PASSWORD
@@ -23,7 +23,7 @@ def main() -> None:
         cameras = client.list_cameras()
         if not cameras:
             raise SystemExit("No cameras found")
-        MjpegServer(client, cameras[0]).serve_forever()
+        MjpegServer(client, cameras[0], player="hls").serve_forever()
 
 
 if __name__ == "__main__":

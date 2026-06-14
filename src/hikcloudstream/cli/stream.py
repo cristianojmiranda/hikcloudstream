@@ -51,6 +51,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Examples:\n"
             "  hikcloudstream-stream user pass --list\n"
             "  hikcloudstream-stream user pass 1 --proxy\n"
+            "  hikcloudstream-stream user pass 1 --proxy --player hls\n"
+            "  hikcloudstream-stream user pass 17 --proxy --player hls\n"
             "  hikcloudstream-stream user pass 1 --proxy --show\n"
             "  hikcloudstream-stream user pass 1 -o frame-hd.jpg\n"
             "  hikcloudstream-stream user pass 1 --record clip.ts --duration 15s\n"
@@ -109,6 +111,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--main-stream",
         action="store_true",
         help="Use main stream (stream=1; higher resolution, not all cameras support it)",
+    )
+    parser.add_argument(
+        "--player",
+        choices=("hls", "mjpeg"),
+        default="hls",
+        help="Browser player: hls (default, sharper) or mjpeg (legacy)",
+    )
+    parser.add_argument(
+        "--preview-fps",
+        type=float,
+        default=8.0,
+        help="MJPEG preview frame rate when --player mjpeg (default: 8)",
+    )
+    parser.add_argument(
+        "--jpeg-quality",
+        type=int,
+        default=75,
+        metavar="Q",
+        help="MJPEG JPEG quality 1–95 when --player mjpeg (default: 75)",
+    )
+    parser.add_argument(
+        "--max-width",
+        type=int,
+        default=0,
+        metavar="PX",
+        help="Max MJPEG width (0=auto: native substream, 1920 main)",
     )
     return parser.parse_args(argv)
 
@@ -212,6 +240,10 @@ def main(argv: list[str] | None = None) -> int:
                 ffmpeg_path=ffmpeg,
                 validate_code=args.validate_code,
                 stream_type=stream_type,
+                player=args.player,
+                preview_fps=args.preview_fps,
+                jpeg_quality=args.jpeg_quality,
+                max_width=args.max_width or None,
             )
             return 0
         except httpx.HTTPError as exc:

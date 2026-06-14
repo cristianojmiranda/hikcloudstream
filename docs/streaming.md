@@ -33,7 +33,7 @@ with HikConnectClient() as client:
 |----------|--------|
 | `record_stream(client, camera, path)` | MPEG-TS file |
 | `capture_live_snapshot(client, camera, path)` | JPEG from live stream |
-| `serve_stream_proxy(client, camera)` | HTTP MJPEG + MPEG-TS |
+| `serve_stream_proxy(client, camera)` | HTTP HLS + MJPEG + MPEG-TS |
 | `MjpegServer(client, camera).serve_forever()` | Same as proxy |
 
 ## Sinks (library integration)
@@ -74,6 +74,26 @@ stream_annex_b_to_hls(
 ```
 
 Requires **FFmpeg** on PATH. Uses `-c copy` (no transcode). Segment files roll under `delete_segments+append_list+independent_segments+omit_endlist`.
+
+## Browser viewer (`serve_stream_proxy`)
+
+Default player is **HLS** (hls.js + FFmpeg fMP4). Legacy **MJPEG** remains available.
+
+```bash
+hikcloudstream-stream user pass 1 --proxy --player hls
+hikcloudstream-stream user pass 17 --proxy --player hls
+hikcloudstream-stream user pass 1 --proxy --player mjpeg --preview-fps 15
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--player` | `hls` | `hls` or `mjpeg` |
+| `--preview-fps` | 8 | MJPEG only |
+| `--jpeg-quality` | 82 | MJPEG only (50–95) |
+| `--max-width` | 1920 / 1408 | MJPEG downscale cap |
+| `--main-stream` | off | Prefer main; SD substream fallback only when substream probe succeeds |
+
+**Stream selection:** `AUTO` tries substream first (DVR channels 1–4). `--main-stream` tries main first; if decode fails and a substream exists, falls back to SD. Main-only cameras (e.g. channel 17) never get a substream candidate.
 
 ### MJPEG tuning
 

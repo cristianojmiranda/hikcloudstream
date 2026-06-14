@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-14
+
+### Added
+
+- **HLS browser viewer** in `hikcloudstream-stream --proxy` — default `--player hls` (hls.js + FFmpeg fMP4 passthrough); `--player mjpeg` remains for legacy preview
+- **`hls_stream_candidates()`** — ordered ingest list with SD substream fallback when `--main-stream` is forced and substream probe succeeds; main-only cameras (e.g. channel 17) never get a substream candidate
+- CLI flags: `--preview-fps`, `--jpeg-quality`, `--max-width` for MJPEG tuning
+
+### Changed
+
+- **`serve_stream_proxy`** — HLS bootstrap with genpts/wallclock timestamps, longer main-stream ready timeout, and on-page fallback notice when main decode fails
+
 ## [0.1.3] - 2026-06-14
 
 ### Changed
