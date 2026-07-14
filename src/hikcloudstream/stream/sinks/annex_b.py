@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 from pyezvizapi.stream import StreamTransport, VtmChannel, detect_transport
 
 from hikcloudstream.exceptions import EncryptedStreamError
-from hikcloudstream.stream.rtp import rtp_h264_to_annexb
+from hikcloudstream.stream.rtp import RtpH264Depacketizer
+from hikcloudstream.stream.sinks.h264_ps import H264ParameterSetInjector
 
 if TYPE_CHECKING:
     from pyezvizapi.stream import VtmStreamClient
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
 
 def packet_to_annex_b(packet_body: bytes, transport: StreamTransport) -> bytes:
     if transport == StreamTransport.RTP:
+        from hikcloudstream.stream.rtp import rtp_h264_to_annexb
+
         return rtp_h264_to_annexb(packet_body)
     return packet_body
 
@@ -30,6 +33,8 @@ def iter_annex_b_chunks(
 ) -> Iterator[tuple[StreamTransport, bytes]]:
     deadline = None if duration_seconds is None else time.monotonic() + duration_seconds
     transport = StreamTransport.UNKNOWN
+    ps_injector = H264ParameterSetInjector()
+    rtp_depacketizer = RtpH264Depacketizer()
 
     for packet in stream.iter_packets(max_packets=max_packets):
         if deadline is not None and time.monotonic() >= deadline:
@@ -49,9 +54,18 @@ def iter_annex_b_chunks(
         active_transport = (
             packet_transport if packet_transport != StreamTransport.UNKNOWN else transport
         )
-        chunk = packet_to_annex_b(packet.body, active_transport)
-        if chunk:
-            yield active_transport, chunk
+        if active_transport == StreamTransport.RTP:
+            annex_chunks = rtp_depacketizer.feed_complete(packet.body)
+        else:
+            chunk = packet_to_annex_b(packet.body, active_transport)
+            annex_chunks = [chunk] if chunk else []
+
+        for chunk in annex_chunks:
+            if not chunk:
+                continue
+            chunk = ps_injector.feed(chunk)
+            if chunk:
+                yield active_transport, chunk
 
 
 def write_stream_payloads(
