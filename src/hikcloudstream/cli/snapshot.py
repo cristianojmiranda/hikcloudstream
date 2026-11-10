@@ -16,11 +16,13 @@ from hikcloudstream.cli._common import (
     dump_camera_list_json,
     ensure_jpeg,
     image_dimensions,
+    normalize_camera_args,
     open_path,
     print_camera_list,
     resolve_camera,
     save_image,
     show_image,
+    verification_code_from_args,
 )
 from hikcloudstream.exceptions import HikCloudStreamError
 from hikcloudstream.models import ClientConfig
@@ -32,10 +34,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  hikcloudstream-snapshot user pass --list\n"
-            "  hikcloudstream-snapshot user pass 3\n"
-            "  hikcloudstream-snapshot user pass 3 -o camera3.jpg\n"
-            "  hikcloudstream-stream user pass 3 -o frame-hd.jpg   # higher-res live frame\n"
+            "  export HIK_CONNECT_USER=user@example.com HIK_CONNECT_PASSWORD=...\n"
+            "  hikcloudstream-snapshot --list\n"
+            "  hikcloudstream-snapshot 3 -o camera3.jpg\n"
+            "  hikcloudstream-stream 3 -o frame-hd.jpg   # higher-res live frame\n"
         ),
     )
     add_auth_args(parser)
@@ -59,6 +61,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    normalize_camera_args(args)
     config = ClientConfig(api_base_url=args.api)
 
     try:
@@ -86,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             camera = resolve_camera(cameras, args.camera)
             image_bytes = client.capture_snapshot(
                 camera,
-                validate_code=args.validate_code,
+                validate_code=verification_code_from_args(args),
             )
             ensure_jpeg(image_bytes)
 

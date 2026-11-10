@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pyezvizapi.stream import StreamTransport
+
 from hikcloudstream.capture import aes_key_material
+from hikcloudstream.stream import crypto
 from hikcloudstream.stream.crypto import looks_encrypted_h264
 
 
@@ -33,3 +36,18 @@ def test_looks_encrypted_ciphertext_heuristic() -> None:
     # Random bytes with start codes but no valid SPS+PPS+slice pattern
     data = b"\x00\x00\x00\x01" + bytes(range(256)) * 4
     assert looks_encrypted_h264(data) is True
+
+
+def test_mpeg_ps_decryption_keeps_transport(monkeypatch) -> None:
+    seen = []
+
+    def decrypt(data: bytes, key: str, *, nalu_header_size: int | None) -> bytes:
+        seen.append((data, key, nalu_header_size))
+        return b"decrypted"
+
+    monkeypatch.setattr(crypto, "decrypt_hikvision_ps_video", decrypt)
+    assert (
+        crypto.decrypt_stream_for_ffmpeg(b"mpeg-ps", "verification-code", StreamTransport.MPEG_PS)
+        == b"decrypted"
+    )
+    assert seen == [(b"mpeg-ps", "verification-code", None)]

@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from pyezvizapi.api_endpoints import API_ENDPOINT_VTDU_TOKEN_V2
 
+from hikcloudstream.client import _trusted_cloud_origin
 from hikcloudstream.exceptions import AuthenticationError, TokenError
 from hikcloudstream.stream.adapter import HikConnectStreamAdapter
 
@@ -16,7 +17,6 @@ def get_vtdu_tokens(adapter: HikConnectStreamAdapter, *, count: int = 5) -> list
     if not session_id:
         raise AuthenticationError("not logged in")
 
-    last_error: Exception | None = None
     try:
         response = adapter._client._http.post(
             f"{adapter._client.base_url}/api/user/token/get",
@@ -30,10 +30,9 @@ def get_vtdu_tokens(adapter: HikConnectStreamAdapter, *, count: int = 5) -> list
         if isinstance(tokens, list) and tokens:
             return [str(token) for token in tokens]
         if payload.get("resultCode") not in (None, "0", 0):
-            raise TokenError(f"Hik-Connect token API error: {payload}")
-        last_error = TokenError("Hik-Connect token API returned no tokens")
-    except Exception as exc:
-        last_error = exc
+            raise TokenError("Hik-Connect token API rejected the request")
+    except Exception:
+        pass
 
     sign = adapter._client.session_sign()
 
@@ -48,17 +47,17 @@ def get_vtdu_tokens(adapter: HikConnectStreamAdapter, *, count: int = 5) -> list
             response.raise_for_status()
             payload = response.json()
             if payload.get("retcode") not in (0, "0"):
-                raise TokenError(f"VTDU token error: {payload}")
+                raise TokenError("VTDU token API rejected the request")
             tokens = payload.get("tokens")
             if not isinstance(tokens, list) or not tokens:
-                raise TokenError(f"VTDU token list empty: {payload}")
+                raise TokenError("VTDU token API returned no tokens")
             return [str(token) for token in tokens]
-        except Exception as exc:
-            last_error = exc
+        except Exception:
+            continue
 
     raise TokenError(
         "could not obtain VTDU stream token; live stream requires auth service "
-        f"access ({last_error})"
+        "access"
     )
 
 
@@ -68,9 +67,10 @@ def _auth_base_candidates(adapter: HikConnectStreamAdapter) -> list[str]:
 
     auth_addr = str(service_urls.get("authAddr") or "").strip()
     if auth_addr and auth_addr.lower() not in {"https://null", "null", "none", ""}:
-        if not auth_addr.startswith(("http://", "https://")):
-            auth_addr = f"https://{auth_addr}"
-        candidates.append(auth_addr.rstrip("/"))
+        try:
+            candidates.append(_trusted_cloud_origin(auth_addr))
+        except AuthenticationError:
+            pass
 
     api_host = adapter._client.api_host
     if api_host.startswith("api") and api_host.endswith(".hik-connect.com"):

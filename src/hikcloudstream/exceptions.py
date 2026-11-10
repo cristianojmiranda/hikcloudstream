@@ -32,6 +32,10 @@ class StreamNegotiationError(HikCloudStreamError):
     """VTM stream session negotiation failed."""
 
 
+class PTZRestoreError(HikCloudStreamError):
+    """The camera could not be returned to its home preset."""
+
+
 class TokenError(HikCloudStreamError):
     """VTDU stream token could not be obtained."""
 

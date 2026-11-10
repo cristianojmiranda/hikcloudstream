@@ -60,7 +60,7 @@ Stable exports live in `src/hikcloudstream/__init__.py` and `src/hikcloudstream/
 |-------|-------|------|
 | Black video on main stream | Proprietary RTP on some DVR channels | Auto substream (`stream=2`) |
 | VTDU token failure | Wrong auth path for Hik-Connect | Primary: `POST /api/user/token/get` |
-| MJPEG viewer + encryption | Decrypt not wired in viewer | Use `validate_code` with record/snapshot only |
+| MJPEG viewer + encryption | MJPEG decoder does not support encrypted HEVC | Use the HLS viewer with `validate_code` |
 | N viewers = N VTM sessions | One TCP session per consumer | Document fan-out / HLS for scale |
 
 ## Testing expectations

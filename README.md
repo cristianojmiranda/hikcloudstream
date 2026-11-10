@@ -13,8 +13,8 @@
 
 - Log in with your Hik-Connect account (same credentials as the mobile app)
 - List cameras and channels on the account
-- Cloud snapshot (~352×288 thumbnail via API)
-- **Live stream** via cloud VTM relay (H.264 → Annex B, MPEG-TS, HLS fMP4, MJPEG viewer)
+- Cloud snapshot via API (resolution depends on the camera)
+- **Live stream** via cloud VTM relay (H.264/HEVC, MPEG-PS/RTP, MPEG-TS, HLS fMP4)
 - Auto-select substream vs main stream per camera
 
 ## What it does **not** do
@@ -57,22 +57,33 @@ with HikConnectClient() as client:
 ```bash
 export HIK_CONNECT_USER="user@example.com"
 export HIK_CONNECT_PASSWORD="your_password"
+# For encrypted cameras, also set HIK_CONNECT_VALIDATE_CODE="your_device_code"
 
-uv run hikcloudstream-snapshot "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" --list
-uv run hikcloudstream-snapshot "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 1 -o thumb.jpg
-uv run hikcloudstream-stream "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 1 --proxy
-uv run hikcloudstream-stream "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 17 --proxy --player hls
-uv run hikcloudstream-stream "$HIK_CONNECT_USER" "$HIK_CONNECT_PASSWORD" 1 -o frame.jpg --duration 6s
+uv run hikcloudstream-snapshot --list
+uv run hikcloudstream-snapshot 1 -o thumb.jpg
+uv run hikcloudstream-stream 1 --proxy
+uv run hikcloudstream-stream 1 --record clip.ts --duration 60s
+uv run hikcloudstream-stream 1 -o frame.jpg --duration 15s
+uv run hikcloudstream-stream 1 -o zone.jpg --zone 0.25,0.25,0.5,0.5
+uv run hikcloudstream-stream 1 --record zone.ts --duration 30s --zone 0.25,0.25,0.5,0.5
+uv run hikcloudstream-stream 1 --list-presets
+uv run hikcloudstream-stream 1 -o preset-photo.jpg --zone-preset 2 --home-preset 1
+uv run hikcloudstream-stream 1 --record preset-video.ts --duration 30s --zone-preset 2 --home-preset 1
 ```
 
 Open `http://127.0.0.1:8558/` when using `--proxy` (default **HLS** player; use `--player mjpeg` for legacy MJPEG).
+The CLI also reads these variables from a `.env` file in the current directory. An encrypted HEVC stream is decrypted and transcoded to H.264 for the browser HLS player; recording retains the original codec. Keep `.env` private.
+
+`--zone X,Y,W,H` selects a rectangle within the full live image using fractions from 0 to 1. It crops the photo or recording digitally and leaves the camera's physical position and optical zoom unchanged. The full view is used again for the next command. The cropped video is encoded as H.264 MPEG-TS.
+
+For physical repositioning, configure two PTZ presets in Hik-Connect first: a target view and a home view. `--zone-preset` moves to the target, waits 5 seconds by default (`--ptz-settle`), captures the photo or requested number of video seconds, then `--home-preset` recalls the home view in a `finally` block. Restoration is retried three times if the cloud request fails. The command reports an error if restoration cannot be confirmed. Preset capture can also use `--zone` for an additional digital crop. The repository cannot infer or create a safe home position automatically.
 
 ### Browser proxy options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--player hls` | yes | H.264 passthrough via hls.js (sharper) |
-| `--player mjpeg` | | PyAV MJPEG `<img>` viewer |
+| `--player hls` | yes | Browser playback; encrypted HEVC is transcoded to H.264 |
+| `--player mjpeg` | | PyAV MJPEG `<img>` viewer for unencrypted H.264 |
 | `--main-stream` | | Force stream=1; falls back to substream only when substream exists |
 | `--preview-fps` | 8 | MJPEG frame rate |
 | `--jpeg-quality` | 75 | MJPEG JPEG quality |

@@ -66,7 +66,7 @@ class HikConnectStreamAdapter:
             payload = response.json()
         except ValueError as exc:
             raise PyEzvizError(
-                f"Could not decode JSON response: {exc}\nBody: {response.text[:300]}"
+                "Could not decode Hik-Connect JSON response"
             ) from exc
         if not isinstance(payload, dict):
             raise PyEzvizError("JSON response is not an object")
@@ -117,7 +117,7 @@ class HikConnectStreamAdapter:
         )
         meta = payload.get("meta") or {}
         if meta.get("code") != 200:
-            raise PyEzvizError(f"pagelist error: {payload}")
+            raise PyEzvizError("Hik-Connect pagelist request failed")
         if json_key:
             return payload.get(json_key)
         return payload

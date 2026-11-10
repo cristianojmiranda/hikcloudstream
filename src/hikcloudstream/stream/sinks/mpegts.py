@@ -5,17 +5,21 @@ from __future__ import annotations
 import io
 import subprocess
 import threading
+from itertools import chain
 from typing import BinaryIO
 
 from pyezvizapi.stream import StreamTransport, VtmStreamClient
 
 from hikcloudstream.exceptions import FFmpegNotFoundError, StreamNegotiationError
+from hikcloudstream.stream.crypto import decrypt_stream_for_ffmpeg, iter_decrypted_chunks
 from hikcloudstream.stream.sinks.annex_b import iter_annex_b_chunks, write_stream_payloads
 
 
 def ffmpeg_input_format(transport: StreamTransport) -> str:
     if transport == StreamTransport.MPEG_PS:
         return "mpeg"
+    if transport == StreamTransport.MPEG_TS:
+        return "mpegts"
     return "h264"
 
 
@@ -84,6 +88,7 @@ def remux_stream_incremental(
     ffmpeg_path: str,
     max_packets: int | None = None,
     duration_seconds: float | None = None,
+    decrypt_key: str | None = None,
 ) -> None:
     chunk_iter = iter_annex_b_chunks(
         stream,
@@ -108,8 +113,10 @@ def remux_stream_incremental(
 
     def _feed_ffmpeg() -> None:
         try:
-            stdin.write(first_chunk)
-            for _transport, chunk in chunk_iter:
+            raw_chunks = chain((first_chunk,), (chunk for _transport, chunk in chunk_iter))
+            for chunk in iter_decrypted_chunks(
+                raw_chunks, decrypt_key=decrypt_key, transport=transport
+            ):
                 stdin.write(chunk)
         except Exception as exc:
             writer_error.append(exc)
@@ -141,6 +148,7 @@ def remux_stream_to_mpegts(
     max_packets: int | None = None,
     duration_seconds: float | None = None,
     live: bool = False,
+    decrypt_key: str | None = None,
 ) -> None:
     if live:
         remux_stream_incremental(
@@ -149,6 +157,7 @@ def remux_stream_to_mpegts(
             ffmpeg_path=ffmpeg_path,
             max_packets=max_packets,
             duration_seconds=duration_seconds,
+            decrypt_key=decrypt_key,
         )
         return
 
@@ -160,7 +169,7 @@ def remux_stream_to_mpegts(
         duration_seconds=duration_seconds,
     )
     remux_annex_b_to_mpegts(
-        buffer.getvalue(),
+        decrypt_stream_for_ffmpeg(buffer.getvalue(), decrypt_key, transport),
         output,
         ffmpeg_path=ffmpeg_path,
         transport=transport,

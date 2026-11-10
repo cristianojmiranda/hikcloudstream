@@ -7,11 +7,13 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from itertools import chain
 from pathlib import Path
 
 from pyezvizapi.stream import VtmStreamClient
 
 from hikcloudstream.exceptions import FFmpegNotFoundError, StreamNegotiationError
+from hikcloudstream.stream.crypto import iter_decrypted_chunks
 from hikcloudstream.stream.sinks.annex_b import iter_annex_b_chunks
 from hikcloudstream.stream.sinks.mpegts import ffmpeg_input_format
 
@@ -31,6 +33,7 @@ def open_hls_remux_process(
     list_size: int = 6,
     input_format: str = "h264",
     use_wallclock_timestamps: bool = True,
+    transcode_video: bool = False,
 ) -> subprocess.Popen[bytes]:
     playlist = output_dir / "index.m3u8"
     segment_pattern = str(output_dir / "seg_%05d.m4s")
@@ -56,8 +59,30 @@ def open_hls_remux_process(
             input_format,
             "-i",
             "pipe:0",
-            "-c",
-            "copy",
+        ]
+    )
+    if transcode_video:
+        input_args.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-tune",
+                "zerolatency",
+                "-g",
+                "50",
+                "-keyint_min",
+                "50",
+                "-sc_threshold",
+                "0",
+                "-an",
+            ]
+        )
+    else:
+        input_args.extend(["-c", "copy"])
+    input_args.extend(
+        [
             "-muxdelay",
             "0",
             "-muxpreload",
@@ -171,9 +196,10 @@ def stream_annex_b_to_hls(
     on_segment: Callable[[int], None] | None = None,
     progress_interval_seconds: float = 0.25,
     use_wallclock_timestamps: bool = True,
+    decrypt_key: str | None = None,
 ) -> None:
     """
-    Feed live Annex B H.264 into ffmpeg and write rolling HLS fMP4 segments.
+    Feed live media into FFmpeg and write rolling HLS fMP4 segments.
 
     ``on_segment`` is called with the current segment count when a new ``.m4s``
     file appears (used by GATO to signal readiness and health ticks).
@@ -192,6 +218,7 @@ def stream_annex_b_to_hls(
         list_size=list_size,
         input_format=ffmpeg_input_format(transport),
         use_wallclock_timestamps=use_wallclock_timestamps,
+        transcode_video=bool(decrypt_key),
     )
     stdin = process.stdin
     if stdin is None:
@@ -214,8 +241,11 @@ def stream_annex_b_to_hls(
 
     def _feed_ffmpeg() -> None:
         try:
-            stdin.write(first_chunk)
-            for _transport, chunk in chunk_iter:
+            raw_chunks = chain((first_chunk,), (chunk for _transport, chunk in chunk_iter))
+            media_chunks = iter_decrypted_chunks(
+                raw_chunks, decrypt_key=decrypt_key, transport=transport
+            )
+            for chunk in media_chunks:
                 if stop_event is not None and stop_event.is_set():
                     break
                 stdin.write(chunk)
