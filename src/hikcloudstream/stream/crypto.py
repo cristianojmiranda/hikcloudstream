@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+
 from Crypto.Cipher import AES
 from pyezvizapi.stream import (
     HIKVISION_NAL_ENCRYPTED_PREFIX_LENGTH,
+    StreamTransport,
     _find_h264_nal_start_codes,
     _find_hevc_nal_start_codes,
     _find_nal_start_codes,
     _h264_nal_type,
     _hevc_nal_type,
+    decrypt_hikvision_ps_video,
     detect_hikvision_ps_video_nalu_header_size,
+    mpeg_ps_decryptable_prefix_length,
 )
 
 from hikcloudstream.capture import aes_key_material
+from hikcloudstream.exceptions import EncryptedStreamError
 
 
 def looks_encrypted_h264(data: bytes) -> bool:
@@ -176,3 +182,50 @@ def decrypt_h264_for_ffmpeg(h264_bytes: bytes, decrypt_key: str | None) -> bytes
         aes_key_material(decrypt_key),
         nalu_header_size=0,
     )
+
+
+def decrypt_stream_for_ffmpeg(
+    payload: bytes,
+    decrypt_key: str | None,
+    transport: StreamTransport,
+) -> bytes:
+    """Decrypt an encrypted stream while preserving its transport framing."""
+    if not decrypt_key:
+        return payload
+    if transport == StreamTransport.MPEG_PS:
+        return decrypt_hikvision_ps_video(payload, decrypt_key, nalu_header_size=None)
+    if transport == StreamTransport.RTP:
+        return decrypt_h264_for_ffmpeg(payload, decrypt_key)
+    raise EncryptedStreamError(f"encrypted {transport.name} streams are not supported")
+
+
+def iter_decrypted_chunks(
+    chunks: Iterable[bytes],
+    *,
+    decrypt_key: str | None,
+    transport: StreamTransport,
+) -> Iterator[bytes]:
+    """Decrypt a live stream without splitting MPEG-PS video NALs across calls."""
+    if not decrypt_key:
+        yield from chunks
+        return
+    if transport == StreamTransport.RTP:
+        for chunk in chunks:
+            yield decrypt_h264_for_ffmpeg(chunk, decrypt_key)
+        return
+    if transport != StreamTransport.MPEG_PS:
+        raise EncryptedStreamError(f"encrypted {transport.name} streams are not supported")
+
+    pending = bytearray()
+    for chunk in chunks:
+        pending.extend(chunk)
+        prefix_length = mpeg_ps_decryptable_prefix_length(pending)
+        if prefix_length:
+            yield decrypt_hikvision_ps_video(
+                bytes(pending[:prefix_length]), decrypt_key, nalu_header_size=None
+            )
+            del pending[:prefix_length]
+        if len(pending) > 16 * 1024 * 1024:
+            raise EncryptedStreamError("MPEG-PS decryption buffer exceeded 16 MiB")
+    if pending:
+        yield decrypt_hikvision_ps_video(bytes(pending), decrypt_key, nalu_header_size=None)

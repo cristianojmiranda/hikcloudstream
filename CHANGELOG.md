@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Zone capture** — `Zone`, `capture_zone_snapshot()`, `record_zone_stream()` and CLI `--zone X,Y,W,H` crop a normalized area of the live image without moving the camera
+- **PTZ presets** — `HikConnectClient.goto_preset()` / `list_presets()`, `capture_preset_snapshot()`, `record_preset_stream()` and CLI `--zone-preset`, `--home-preset`, `--ptz-settle`, `--list-presets`; the home preset is always recalled, `PTZRestoreError` is raised if it fails three times
+- **Encrypted MPEG-PS/HEVC** — `decrypt_key` on HLS and MPEG-TS sinks; the HLS proxy transcodes decrypted video to H.264
+- CLI reads `.env` from the current directory and `HIK_CONNECT_VALIDATE_CODE`; the camera number can be the only positional argument
+
+### Changed
+
+- CLI `--duration` default is now 15s; zero or negative durations are rejected
+- Recordings are staged in a temporary file and must contain a decodable frame before replacing the output
+- MJPEG viewer rejects encrypted streams (use HLS)
+
+### Security
+
+- Login and auth redirects are restricted to HTTPS `hik-connect.com` / `ezvizlife.com` origins; HTTP redirects are no longer followed automatically
+- API payloads are no longer included in error messages
+- Viewer HTML escapes camera names; HLS file serving uses a strict path containment check
+
 ## [0.1.4] - 2026-06-14
 
 ### Added

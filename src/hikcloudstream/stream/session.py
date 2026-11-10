@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import re
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -13,10 +15,15 @@ from pyezvizapi.cloud_stream import get_vtm_info, get_vtm_page_list, parse_vtm_s
 from pyezvizapi.stream import VtmStreamClient, build_vtm_url
 
 from hikcloudstream.client import HikConnectClient
-from hikcloudstream.exceptions import FFmpegNotFoundError, StreamNegotiationError, TokenError
+from hikcloudstream.exceptions import (
+    EncryptedStreamError,
+    FFmpegNotFoundError,
+    StreamNegotiationError,
+    TokenError,
+)
 from hikcloudstream.models import Camera, StreamType
 from hikcloudstream.stream.adapter import HikConnectStreamAdapter
-from hikcloudstream.stream.crypto import decrypt_h264_for_ffmpeg
+from hikcloudstream.stream.crypto import decrypt_stream_for_ffmpeg
 from hikcloudstream.stream.probe import with_stream_type
 from hikcloudstream.stream.sinks.annex_b import iter_annex_b_chunks, write_stream_payloads
 from hikcloudstream.stream.sinks.mpegts import remux_annex_b_to_mpegts, remux_stream_incremental
@@ -257,6 +264,44 @@ def _resolve_stream_decrypt_key(
         return validate_code
 
 
+def _verify_recording(
+    video_path: Path,
+    *,
+    ffmpeg_path: str,
+    verification_code_supplied: bool = False,
+) -> None:
+    """Reject a remux that contains no decodable video frame."""
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video_path),
+        "-frames:v",
+        "1",
+        "-f",
+        "null",
+        "-",
+        "-progress",
+        "pipe:1",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+    except subprocess.TimeoutExpired as exc:
+        raise StreamNegotiationError("video validation timed out") from exc
+    frames = [int(value) for value in re.findall(r"(?m)^frame=\s*(\d+)$", result.stdout)]
+    if result.returncode != 0 or not frames or max(frames) < 1:
+        hint = (
+            "try a longer duration or verify the device code"
+            if verification_code_supplied
+            else "if device encryption is enabled, set HIK_CONNECT_VALIDATE_CODE"
+        )
+        raise EncryptedStreamError(
+            f"recording has no decodable video frame; {hint}"
+        )
+
+
 def record_to_file(
     session: LiveStreamSession,
     output_path: Path,
@@ -273,24 +318,34 @@ def record_to_file(
             f"VTM stream negotiation failed (code {stream_info.result}). "
             "VTDU auth may be unavailable from this network."
         )
-    with output_path.open("wb") as handle:
-        if decrypt_key:
-            buffer = io.BytesIO()
-            transport = write_stream_payloads(
-                session._client,
-                buffer,
-                max_packets=None,
-                duration_seconds=duration_seconds,
-            )
-            payload = decrypt_h264_for_ffmpeg(buffer.getvalue(), decrypt_key)
-            remux_annex_b_to_mpegts(payload, handle, ffmpeg_path=ffmpeg, transport=transport)
-        else:
-            remux_stream_incremental(
-                session._client,
-                handle,
-                ffmpeg_path=ffmpeg,
-                duration_seconds=duration_seconds,
-            )
+    with tempfile.TemporaryDirectory(prefix=".hikcloudstream-", dir=output_path.parent) as tmp:
+        staged_path = Path(tmp) / "recording.ts"
+        with staged_path.open("wb") as handle:
+            if decrypt_key:
+                buffer = io.BytesIO()
+                transport = write_stream_payloads(
+                    session._client,
+                    buffer,
+                    max_packets=None,
+                    duration_seconds=duration_seconds,
+                )
+                payload = decrypt_stream_for_ffmpeg(buffer.getvalue(), decrypt_key, transport)
+                remux_annex_b_to_mpegts(payload, handle, ffmpeg_path=ffmpeg, transport=transport)
+            else:
+                remux_stream_incremental(
+                    session._client,
+                    handle,
+                    ffmpeg_path=ffmpeg,
+                    duration_seconds=duration_seconds,
+                )
+        if staged_path.stat().st_size == 0:
+            raise StreamNegotiationError("live stream produced an empty recording")
+        _verify_recording(
+            staged_path,
+            ffmpeg_path=ffmpeg,
+            verification_code_supplied=bool(decrypt_key),
+        )
+        staged_path.replace(output_path)
     return output_path
 
 
@@ -302,8 +357,9 @@ def capture_frame(
     ffmpeg_path: str = "ffmpeg",
     decrypt_key: str | None = None,
 ) -> Path:
-    temp_video = output_path.with_suffix(".ts")
-    try:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".hikcloudstream-", dir=output_path.parent) as tmp:
+        temp_video = Path(tmp) / "capture.ts"
         record_to_file(
             session,
             temp_video,
@@ -312,8 +368,6 @@ def capture_frame(
             decrypt_key=decrypt_key,
         )
         return _extract_frame(temp_video, output_path, ffmpeg_path=ffmpeg_path)
-    finally:
-        temp_video.unlink(missing_ok=True)
 
 
 def _extract_frame(

@@ -8,6 +8,7 @@ import re
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -19,14 +20,25 @@ from hikcloudstream.cli._common import (
     dump_camera_list_json,
     ensure_jpeg,
     image_dimensions,
+    normalize_camera_args,
     open_path,
     print_camera_list,
     resolve_camera,
     show_image,
+    verification_code_from_args,
 )
 from hikcloudstream.exceptions import HikCloudStreamError
 from hikcloudstream.models import ClientConfig, StreamType
-from hikcloudstream.stream import capture_live_snapshot, record_stream, require_ffmpeg
+from hikcloudstream.stream import (
+    Zone,
+    capture_live_snapshot,
+    capture_preset_snapshot,
+    capture_zone_snapshot,
+    record_preset_stream,
+    record_stream,
+    record_zone_stream,
+    require_ffmpeg,
+)
 from hikcloudstream.stream.sinks.http import play_url, serve_stream_proxy
 
 
@@ -37,6 +49,8 @@ def _parse_duration(value: str) -> float:
             f"invalid duration {value!r}; use examples like 10s or 1m"
         )
     amount = float(match.group(1))
+    if amount <= 0:
+        raise argparse.ArgumentTypeError("duration must be greater than zero")
     unit = match.group(2) or "s"
     if unit.startswith("m"):
         return amount * 60.0
@@ -49,13 +63,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  hikcloudstream-stream user pass --list\n"
-            "  hikcloudstream-stream user pass 1 --proxy\n"
-            "  hikcloudstream-stream user pass 1 --proxy --player hls\n"
-            "  hikcloudstream-stream user pass 17 --proxy --player hls\n"
-            "  hikcloudstream-stream user pass 1 --proxy --show\n"
-            "  hikcloudstream-stream user pass 1 -o frame-hd.jpg\n"
-            "  hikcloudstream-stream user pass 1 --record clip.ts --duration 15s\n"
+            "  export HIK_CONNECT_USER=user@example.com HIK_CONNECT_PASSWORD=...\n"
+            "  hikcloudstream-stream --list\n"
+            "  hikcloudstream-stream 1 --proxy\n"
+            "  hikcloudstream-stream 1 --record clip.ts --duration 15s\n"
         ),
     )
     add_auth_args(parser)
@@ -74,8 +85,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--duration",
         type=_parse_duration,
-        default=10.0,
-        help="Recording/snapshot warmup duration (default: 10s)",
+        default=15.0,
+        help="Recording/snapshot warmup duration (default: 15s)",
+    )
+    parser.add_argument(
+        "--zone",
+        type=Zone.parse,
+        metavar="X,Y,W,H",
+        help="Crop a live photo or recording to a normalized image zone (0..1)",
+    )
+    parser.add_argument(
+        "--zone-preset",
+        type=int,
+        metavar="INDEX",
+        help="Aim at an existing PTZ preset for a photo or recording",
+    )
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        help="List existing PTZ presets for the selected camera",
+    )
+    parser.add_argument(
+        "--home-preset",
+        type=int,
+        metavar="INDEX",
+        help="Return to this existing PTZ preset after --zone-preset",
+    )
+    parser.add_argument(
+        "--ptz-settle",
+        type=float,
+        default=5.0,
+        metavar="SECONDS",
+        help="Wait for preset movement before capture (default: 5s)",
     )
     parser.add_argument(
         "--proxy",
@@ -143,17 +184,40 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    normalize_camera_args(args)
 
     if not args.list and args.camera is None:
         print("Specify a camera number or use --list.", file=sys.stderr)
         return 2
 
     action_count = sum(1 for flag in (args.output, args.record, args.proxy) if flag)
-    if not args.list and action_count != 1:
+    if not (args.list or args.list_presets) and action_count != 1:
         print(
             "Choose exactly one action: -o/--output, --record, or --proxy.",
             file=sys.stderr,
         )
+        return 2
+    if args.zone and not (args.output or args.record):
+        print("--zone requires --output or --record.", file=sys.stderr)
+        return 2
+    if (args.zone_preset is None) != (args.home_preset is None):
+        print("--zone-preset and --home-preset must be provided together.", file=sys.stderr)
+        return 2
+    if args.zone_preset is not None and not (args.output or args.record):
+        print("PTZ presets require --output or --record.", file=sys.stderr)
+        return 2
+    if args.list_presets and (action_count or args.zone or args.zone_preset is not None):
+        print("--list-presets cannot be combined with capture or PTZ options.", file=sys.stderr)
+        return 2
+    if args.zone_preset is not None and (
+        args.zone_preset < 1
+        or args.home_preset < 1
+        or args.zone_preset == args.home_preset
+    ):
+        print("PTZ zone and home presets must be distinct positive indices.", file=sys.stderr)
+        return 2
+    if args.ptz_settle < 0:
+        print("--ptz-settle must not be negative.", file=sys.stderr)
         return 2
 
     try:
@@ -178,16 +242,33 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
             camera = resolve_camera(cameras, args.camera)
+            if args.list_presets:
+                for index, name in client.list_presets(camera):
+                    print(f"{index:>3}  {name}")
+                return 0
             ffmpeg = require_ffmpeg(args.ffmpeg)
 
             if args.output:
-                saved = capture_live_snapshot(
+                capture: Callable[..., Path]
+                if args.zone_preset is not None:
+                    capture = capture_preset_snapshot
+                    capture_kwargs = {
+                        "zone": args.zone,
+                        "zone_preset": args.zone_preset,
+                        "home_preset": args.home_preset,
+                        "settle_seconds": args.ptz_settle,
+                    }
+                else:
+                    capture = capture_zone_snapshot if args.zone else capture_live_snapshot
+                    capture_kwargs = {"zone": args.zone} if args.zone else {}
+                saved = capture(
                     client,
                     camera,
                     args.output,
+                    **capture_kwargs,
                     warmup_seconds=args.duration,
                     ffmpeg_path=ffmpeg,
-                    validate_code=args.validate_code,
+                    validate_code=verification_code_from_args(args),
                     stream_type=stream_type,
                 )
                 image_bytes = saved.read_bytes()
@@ -205,13 +286,26 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
             if args.record:
-                saved = record_stream(
+                record: Callable[..., Path]
+                if args.zone_preset is not None:
+                    record = record_preset_stream
+                    record_kwargs = {
+                        "zone": args.zone,
+                        "zone_preset": args.zone_preset,
+                        "home_preset": args.home_preset,
+                        "settle_seconds": args.ptz_settle,
+                    }
+                else:
+                    record = record_zone_stream if args.zone else record_stream
+                    record_kwargs = {"zone": args.zone} if args.zone else {}
+                saved = record(
                     client,
                     camera,
                     args.record,
+                    **record_kwargs,
                     duration_seconds=args.duration,
                     ffmpeg_path=ffmpeg,
-                    validate_code=args.validate_code,
+                    validate_code=verification_code_from_args(args),
                     stream_type=stream_type,
                 )
                 print(
@@ -238,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 ffmpeg_path=ffmpeg,
-                validate_code=args.validate_code,
+                validate_code=verification_code_from_args(args),
                 stream_type=stream_type,
                 player=args.player,
                 preview_fps=args.preview_fps,

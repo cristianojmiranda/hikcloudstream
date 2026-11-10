@@ -51,9 +51,9 @@ def iter_annex_b_chunks(
         packet_transport = detect_transport(packet.body)
         if transport == StreamTransport.UNKNOWN and packet_transport != StreamTransport.UNKNOWN:
             transport = packet_transport
-        active_transport = (
-            packet_transport if packet_transport != StreamTransport.UNKNOWN else transport
-        )
+        # VTM may split one MPEG-PS packet across several bodies. A fragment can
+        # resemble an RTP header, so keep the first recognized transport.
+        active_transport = transport
         if active_transport == StreamTransport.RTP:
             annex_chunks = rtp_depacketizer.feed_complete(packet.body)
         else:
@@ -63,7 +63,8 @@ def iter_annex_b_chunks(
         for chunk in annex_chunks:
             if not chunk:
                 continue
-            chunk = ps_injector.feed(chunk)
+            if active_transport == StreamTransport.RTP:
+                chunk = ps_injector.feed(chunk)
             if chunk:
                 yield active_transport, chunk
 

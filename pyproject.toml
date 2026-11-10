@@ -32,6 +32,7 @@ dependencies = [
     "httpx>=0.28.0",
     "pycryptodome>=3.21.0",
     "pyezvizapi>=1.0.4.5",
+    "python-dotenv>=1.0.1",
 ]
 
 [project.optional-dependencies]

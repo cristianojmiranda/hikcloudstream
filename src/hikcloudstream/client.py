@@ -20,6 +20,28 @@ from hikcloudstream.models import Camera, ClientConfig, Credentials
 __all__ = ["HikConnectClient", "CLOUD_CAPTURE_MAX"]
 
 
+def _trusted_cloud_origin(value: str) -> str:
+    """Accept HTTPS origins belonging to Hik-Connect or EZVIZ only."""
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    host = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or not any(
+            host == domain or host.endswith(f".{domain}")
+            for domain in ("hik-connect.com", "ezvizlife.com")
+        )
+    ):
+        raise AuthenticationError("untrusted Hik-Connect service address")
+    return f"https://{host}"
+
+
 class HikConnectClient:
     """HTTP client for the Hik-Connect cloud camera API."""
 
@@ -33,7 +55,7 @@ class HikConnectClient:
         self._service_urls: dict[str, Any] | None = None
         self._http = httpx.Client(
             timeout=self.config.timeout,
-            follow_redirects=True,
+            follow_redirects=False,
         )
 
     def close(self) -> None:
@@ -71,6 +93,19 @@ class HikConnectClient:
     def login(self, credentials: Credentials) -> None:
         """Authenticate and store session tokens."""
         self.account = credentials.username
+        visited = {self.base_url}
+        for _ in range(4):
+            redirect = self._login_once(credentials)
+            if redirect is None:
+                return
+            next_url = _trusted_cloud_origin(redirect)
+            if next_url in visited:
+                raise AuthenticationError("Hik-Connect login redirect loop")
+            visited.add(next_url)
+            self.base_url = next_url
+        raise AuthenticationError("too many Hik-Connect login redirects")
+
+    def _login_once(self, credentials: Credentials) -> str | None:
         data = {
             "account": credentials.username,
             "password": self._md5_password(credentials.password),
@@ -90,8 +125,7 @@ class HikConnectClient:
             api_domain = area.get("apiDomain")
             if not api_domain:
                 raise ApiError(1100, "login redirect without apiDomain")
-            self.base_url = f"https://{api_domain}"
-            return self.login(credentials)
+            return str(api_domain)
 
         raise_login_error(payload)
         session = payload.get("loginSession") or {}
@@ -100,6 +134,7 @@ class HikConnectClient:
         if not self.session_id:
             raise AuthenticationError("login succeeded but sessionId is missing")
         self._service_urls = None
+        return None
 
     def request_json(
         self,
@@ -231,6 +266,49 @@ class HikConnectClient:
         if not encrypt_key:
             raise ApiError(0, "encrypt key response is empty")
         return str(encrypt_key)
+
+    def goto_preset(self, camera: Camera, preset_index: int) -> None:
+        """Move a camera to an existing Hik-Connect PTZ preset."""
+        if preset_index < 1:
+            raise ValueError("preset index must be positive")
+        payload = self.request_json(
+            "POST",
+            "/api/device/preset/config",
+            params={
+                "subSerial": camera.device_serial,
+                "channelNo": camera.channel_no,
+                "configPreset": "GOTO_PRESET",
+                "index": preset_index,
+            },
+        )
+        if "resultCode" in payload:
+            try:
+                code = int(payload["resultCode"])
+            except (TypeError, ValueError) as exc:
+                raise ApiError(0, "PTZ preset response has no valid result code") from exc
+            if code != 0:
+                raise ApiError(code, "PTZ preset command was rejected")
+        else:
+            check_api_meta(payload)
+
+    def list_presets(self, camera: Camera) -> list[tuple[int, str]]:
+        """List saved PTZ preset indices and names for a camera channel."""
+        payload = self.request_json(
+            "POST",
+            "/api/device/preset/list",
+            data={"subSerial": camera.device_serial, "channelNo": camera.channel_no},
+        )
+        try:
+            code = int(payload["resultCode"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApiError(0, "PTZ preset list has no valid result code") from exc
+        if code != 0:
+            raise ApiError(code, "PTZ preset list was rejected")
+        result: list[tuple[int, str]] = []
+        for item in payload.get("data") or []:
+            if isinstance(item, dict) and item.get("index") is not None:
+                result.append((int(item["index"]), str(item.get("name") or "")))
+        return result
 
     def capture_snapshot(
         self,

@@ -5,7 +5,7 @@
 Live video uses the **Hik-Connect cloud VTM relay**:
 
 ```
-Login → VTDU tokens → TCP to regional VTM → RTP/H.264 → depacketize → sinks
+Login → VTDU tokens → TCP to regional VTM → MPEG-PS or RTP → optional decrypt → sinks
 ```
 
 ## Session API
@@ -42,12 +42,12 @@ Lower-level sinks under `hikcloudstream.stream.sinks` for custom ingest/fan-out:
 
 | Module | Function | Output |
 |--------|----------|--------|
-| `annex_b` | `iter_annex_b_chunks(session)` | Raw H.264 Annex B chunks |
+| `annex_b` | `iter_annex_b_chunks(session)` | Raw media chunks, with transport metadata |
 | `mpegts` | `stream_annex_b_to_mpegts(...)` | MPEG-TS on stdout or file |
 | `mjpeg` | `stream_mjpeg(...)` | Multipart MJPEG (PyAV decode + JPEG encode) |
 | `hls` | `stream_annex_b_to_hls(...)` | Rolling HLS fMP4 segments on disk |
 
-### HLS fMP4 (passthrough)
+### HLS fMP4
 
 For many browser viewers from a **single** VTM ingest, remux H.264 without re-encoding:
 
@@ -73,16 +73,16 @@ stream_annex_b_to_hls(
 # Serve Path("/tmp/hls/ch1/index.m3u8") + seg_*.m4s + init.mp4 via HTTP
 ```
 
-Requires **FFmpeg** on PATH. Uses `-c copy` (no transcode). Segment files roll under `delete_segments+append_list+independent_segments+omit_endlist`.
+Requires **FFmpeg** on PATH. Unencrypted video uses `-c copy`. When a verification code is supplied, the proxy decrypts the stream and transcodes it to H.264 for browser playback. Segment files roll under `delete_segments+append_list+independent_segments+omit_endlist`.
 
 ## Browser viewer (`serve_stream_proxy`)
 
 Default player is **HLS** (hls.js + FFmpeg fMP4). Legacy **MJPEG** remains available.
 
 ```bash
-hikcloudstream-stream user pass 1 --proxy --player hls
-hikcloudstream-stream user pass 17 --proxy --player hls
-hikcloudstream-stream user pass 1 --proxy --player mjpeg --preview-fps 15
+hikcloudstream-stream 1 --proxy --player hls
+hikcloudstream-stream 17 --proxy --player hls
+hikcloudstream-stream 1 --proxy --player mjpeg --preview-fps 15
 ```
 
 | Flag | Default | Description |
@@ -116,4 +116,8 @@ See [limitations.md](limitations.md).
 
 ## Encrypted streams
 
-If the device uses video encryption, pass `validate_code` to `record_stream` / `capture_live_snapshot`. The MJPEG HTTP viewer does not support encrypted live decode yet.
+If the device uses video encryption, pass `validate_code` to `record_stream`, `capture_live_snapshot`, or `serve_stream_proxy`. The CLI accepts `HIK_CONNECT_VALIDATE_CODE` in its environment or a current-directory `.env` file. The HLS browser player supports encrypted MPEG-PS/HEVC; the MJPEG viewer remains limited to unencrypted H.264. Recording checks that FFmpeg can decode at least one frame before replacing the destination file.
+
+## Zone capture and PTZ presets
+
+`--zone x,y,width,height` crops a normalized rectangle of the live image for a photo or H.264 MPEG-TS recording. It does not move the camera. For physical movement, save a target preset and a home preset in Hik-Connect, then use `--zone-preset TARGET --home-preset HOME` with `-o` or `--record`. The script calls the target preset, captures, and calls the home preset even when capture fails. It retries the return three times and reports a restore error if all attempts fail. Cloud or power failures can still prevent a physical return; the script does not claim the camera's position was measured. Preset recording captures extra source time and trims the encoded output to the requested duration.

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from hikcloudstream._config import (
 )
 from hikcloudstream.client import HikConnectClient
 from hikcloudstream.exceptions import (
+    EncryptedStreamError,
     FFmpegNotFoundError,
     HikCloudStreamError,
     StreamNegotiationError,
@@ -74,7 +76,7 @@ def viewer_html(
         res.textContent = 'HLS not supported — open /mjpeg';
       }
     </script>"""
-        player_note = "HLS player (H.264 passthrough, sharper than MJPEG)."
+        player_note = "HLS player (browser-compatible H.264 output)."
     else:
         media = '<img src="/mjpeg" alt="live stream" />'
         player_note = "MJPEG player. For sharper video use <code>--player hls</code>."
@@ -90,7 +92,7 @@ def viewer_html(
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>{title}</title>
+  <title>{escape(title)}</title>
   <style>
     body {{
       margin: 0;
@@ -119,10 +121,10 @@ def viewer_html(
 </head>
 <body>
   <main>
-    <h1>{camera_name}</h1>
+    <h1>{escape(camera_name)}</h1>
     {media}
     <p>
-      {player_note} VLC/ffplay: <code>{vlc_url}</code>.
+      {player_note} VLC/ffplay: <code>{escape(vlc_url)}</code>.
       Stream auto (2=SD substream, 1=HD main).{hd_hint}
     </p>
   </main>
@@ -147,6 +149,7 @@ def _start_hls_ingest(
     ffmpeg_path: str,
     stop: threading.Event,
     errors: list[str],
+    decrypt_key: str | None,
 ) -> threading.Thread:
     def _run() -> None:
         try:
@@ -161,6 +164,7 @@ def _start_hls_ingest(
                     hls_dir,
                     ffmpeg_path=ffmpeg_path,
                     stop_event=stop,
+                    decrypt_key=decrypt_key,
                 )
         except Exception as exc:
             errors.append(str(exc))
@@ -177,6 +181,7 @@ def _bootstrap_hls_ingest(
     selected_stream: int,
     forced_stream_type: int | None,
     ffmpeg_path: str,
+    decrypt_key: str | None,
 ) -> tuple[Path, threading.Event, threading.Thread, int, str]:
     hls_dir = Path(tempfile.mkdtemp(prefix="hikcloudstream-hls-"))
     hls_stop = threading.Event()
@@ -208,8 +213,11 @@ def _bootstrap_hls_ingest(
             ffmpeg_path=ffmpeg_path,
             stop=hls_stop,
             errors=hls_errors,
+            decrypt_key=decrypt_key,
         )
         ready_timeout = HLS_READY_TIMEOUT_MAIN if candidate == 1 else HLS_READY_TIMEOUT_SUB
+        if decrypt_key:
+            ready_timeout *= 2
         if wait_for_hls_ready(
             hls_dir,
             timeout=ready_timeout,
@@ -331,6 +339,8 @@ def serve_stream_proxy(
     viewer_mode = player.lower()
     if viewer_mode not in ("hls", "mjpeg"):
         raise HikCloudStreamError(f"unsupported player {player!r}; use hls or mjpeg")
+    if viewer_mode == "mjpeg" and decrypt_key:
+        raise EncryptedStreamError("encrypted camera preview requires the HLS player")
 
     hls_dir: Path | None = None
     hls_stop: threading.Event | None = None
@@ -344,6 +354,7 @@ def serve_stream_proxy(
             selected_stream=selected_stream,
             forced_stream_type=forced,
             ffmpeg_path=ffmpeg,
+            decrypt_key=decrypt_key,
         )
         hls_root = hls_dir.resolve()
 
@@ -363,7 +374,7 @@ def serve_stream_proxy(
                 self.send_error(403, "Forbidden")
                 return
             file_path = (hls_root / rel).resolve()
-            if not str(file_path).startswith(str(hls_root)):
+            if not file_path.is_relative_to(hls_root):
                 self.send_error(403, "Forbidden")
                 return
             if not file_path.is_file():
@@ -458,6 +469,7 @@ def serve_stream_proxy(
                             ffmpeg_path=ffmpeg,
                             duration_seconds=None,
                             live=True,
+                            decrypt_key=decrypt_key,
                         )
                 except (BrokenPipeError, ConnectionResetError):
                     return

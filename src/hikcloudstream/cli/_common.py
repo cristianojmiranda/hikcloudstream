@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from hikcloudstream._config import JPEG_MAGIC
 from hikcloudstream.exceptions import CameraNotFoundError
 from hikcloudstream.models import Camera, ClientConfig, Credentials
@@ -17,7 +19,13 @@ from hikcloudstream.models import Camera, ClientConfig, Credentials
 DEFAULT_API = ClientConfig().api_base_url
 
 
+def load_cli_environment() -> None:
+    """Load the current directory's .env without overriding exported variables."""
+    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
+
+
 def credentials_from_args(args: argparse.Namespace) -> Credentials:
+    load_cli_environment()
     username = args.username or os.environ.get("HIK_CONNECT_USER", "")
     password = args.password or os.environ.get("HIK_CONNECT_PASSWORD", "")
     if not username or not password:
@@ -25,6 +33,25 @@ def credentials_from_args(args: argparse.Namespace) -> Credentials:
             "username and password required (arguments or HIK_CONNECT_USER / HIK_CONNECT_PASSWORD)"
         )
     return Credentials(username=username, password=password)
+
+
+def normalize_camera_args(args: argparse.Namespace) -> None:
+    """Allow CAMERA as the only positional argument with env credentials."""
+    load_cli_environment()
+    if (
+        args.camera is None
+        and args.password is None
+        and args.username is not None
+        and args.username.isdecimal()
+        and os.environ.get("HIK_CONNECT_USER")
+    ):
+        args.camera = int(args.username)
+        args.username = None
+
+
+def verification_code_from_args(args: argparse.Namespace) -> str | None:
+    load_cli_environment()
+    return args.validate_code or os.environ.get("HIK_CONNECT_VALIDATE_CODE")
 
 
 def add_auth_args(parser: argparse.ArgumentParser) -> None:

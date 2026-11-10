@@ -4,10 +4,10 @@
 |-------|--------|------------|
 | Unofficial API | Endpoints may change | Pin `ClientConfig.client_version`; watch app updates |
 | VTM session limits | N viewers = N cloud connections | Single ingest + HLS/WebRTC fan-out |
-| Encrypted live MJPEG | Viewer raises error | `validate_code` on record/snapshot only |
+| Encrypted live MJPEG | Viewer raises error | Use HLS with `validate_code` |
 | Proprietary RTP on main | Some channels black on `stream=1` | Auto substream (`stream=2`) |
 | Channels without VTM | `Could not find VTM resource` | Channel offline or unlicensed |
-| Cloud snapshot resolution | Fixed ~352×288 | Live frame capture for HD |
+| Cloud snapshot resolution | Depends on camera and cloud response | Use live frame capture when a higher resolution is needed |
 | CAPTCHA / 2FA | Login fails | Log in via official app first |
 | No P2P / LAN RTSP | No direct NVR URL | Use go2rtc / RTSP for local access |
 | Token / firewall | VTDU auth blocked | Ensure outbound HTTPS to Hik-Connect auth hosts |
