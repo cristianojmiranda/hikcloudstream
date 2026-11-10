@@ -299,8 +299,8 @@ class HikConnectClient:
             data={"subSerial": camera.device_serial, "channelNo": camera.channel_no},
         )
         try:
-            code = int(payload.get("resultCode"))
-        except (TypeError, ValueError) as exc:
+            code = int(payload["resultCode"])
+        except (KeyError, TypeError, ValueError) as exc:
             raise ApiError(0, "PTZ preset list has no valid result code") from exc
         if code != 0:
             raise ApiError(code, "PTZ preset list was rejected")
